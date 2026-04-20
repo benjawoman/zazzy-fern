@@ -2,18 +2,24 @@
 
 A personal productivity desktop app for organizing everyday thoughts, notes, and tasks. Built with Tauri (Rust backend) + React/TypeScript frontend.
 
-**Current version: 0.1.3**
+**Current version: 0.1.4.1**
 
 ---
 
 ## Versioning rule
 
-Increment the patch version by `0.0.1` for every change or addition. Update the version number in all four places:
+| Position | Meaning | Example |
+|---|---|---|
+| 3rd decimal | New feature shipped | `0.1.3` → `0.1.4` |
+| 4th decimal | Bug fix / test build | `0.1.4` → `0.1.4.1` |
+
+Update the version number in **all five places** on every change:
 
 1. `CLAUDE.md` — the `Current version:` line above
-2. `package.json` — `"version"` field
-3. `src-tauri/Cargo.toml` — `version` field under `[package]`
-4. `src-tauri/tauri.conf.json` — `"version"` field
+2. `package.json` — `"version"` field (supports 4-part: `0.1.4.1`)
+3. `package-lock.json` — `"version"` field at the top AND inside `"packages": { "": { ... } }` (supports 4-part)
+4. `src-tauri/Cargo.toml` — `version` under `[package]` (**3-part semver only** — use base version e.g. `0.1.4`)
+5. `src-tauri/tauri.conf.json` — `"version"` field (**3-part semver only** — use base version e.g. `0.1.4`)
 
 ---
 
@@ -101,7 +107,7 @@ type ActiveView =
   | { type: "dashboard" }
   | { type: "folder"; folderId: string }
   | { type: "note"; noteId: string }
-  | { type: "tasklist"; taskListId: string }
+  | { type: "tasklist"; taskListId: string; title?: string }
   | { type: "calendar" }
   | { type: "overview" }
   | { type: "settings" }
@@ -128,7 +134,7 @@ Clicking a folder in the sidebar sets `{ type: "folder", folderId }`, which rend
 | Folder tree (sidebar, drag-and-drop, context menu) | Done |
 | Note list + rich text editor | Done |
 | Formatting toolbar (fonts, headings, marks) | Done |
-| Task list view | Backend done, UI pending |
+| Task list view + sidebar navigation | Done |
 | Calendar view | Backend done, UI pending |
 | Dashboard (real data) | Placeholder only |
 | Settings page | Placeholder only |

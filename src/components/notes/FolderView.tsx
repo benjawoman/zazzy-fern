@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
-import { Plus, FileText, Pin, ListChecks } from "lucide-react";
+import { Plus, FileText, Pin, ListChecks, Paperclip } from "lucide-react";
 import { formatDistanceToNow, isToday, isYesterday, isAfter, subDays } from "date-fns";
 import {
   getNotesForFolder,
@@ -10,6 +10,7 @@ import {
   toggleNotePin,
   getTaskListsForFolder,
   createTaskList,
+  addFileToFolder,
 } from "@/lib/tauri";
 import { useFolderStore, useUiStore } from "@/store";
 import type { Note, TaskList, Folder } from "@/types";
@@ -66,6 +67,7 @@ export function FolderView({ folderId, initialNoteId }: FolderViewProps) {
   const [taskLists, setTaskLists] = useState<TaskList[]>([]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const folder = findFolder(folders, folderId);
 
@@ -121,6 +123,23 @@ export function FolderView({ folderId, initialNoteId }: FolderViewProps) {
     setTaskLists((prev) => [...prev, tl]);
     setActiveView({ type: "tasklist", taskListId: tl.id, title: tl.title, folderId });
   }, [folderId, setActiveView]);
+
+  const handleFileChosen = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const picked = e.target.files?.[0];
+      e.target.value = "";
+      if (!picked) return;
+      const buf = await picked.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buf));
+      await addFileToFolder({
+        folderId,
+        fileName: picked.name,
+        bytes,
+        mimeType: picked.type || null,
+      });
+    },
+    [folderId]
+  );
 
   const handleDeleteNote = useCallback(
     async (noteId: string) => {
@@ -192,9 +211,22 @@ export function FolderView({ folderId, initialNoteId }: FolderViewProps) {
                   <ListChecks size={12} className="text-muted-foreground" />
                   New Task List
                 </DropdownMenu.Item>
+                <DropdownMenu.Item
+                  onSelect={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-3 py-1.5 cursor-pointer outline-none hover:bg-accent focus:bg-accent"
+                >
+                  <Paperclip size={12} className="text-muted-foreground" />
+                  Add File
+                </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Portal>
           </DropdownMenu.Root>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            onChange={handleFileChosen}
+          />
         </div>
 
         {/* Item list */}

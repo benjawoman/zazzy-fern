@@ -1,10 +1,11 @@
-import { useState, useEffect } from "react";
-import { FileText, ListChecks } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { FileText, ListChecks, File as FileIcon, Plus, Paperclip } from "lucide-react";
 import { formatDistanceToNow, isToday, isYesterday, isAfter, subDays } from "date-fns";
-import { getNotesForFolder, getTaskListsForFolder } from "@/lib/tauri";
+import { getNotesForFolder, getTaskListsForFolder, getFilesForFolder, openFile, addFileToFolder } from "@/lib/tauri";
 import { useFolderStore, useUiStore } from "@/store";
-import type { Note, TaskList, Folder } from "@/types";
+import type { Note, TaskList, FileEntry, Folder } from "@/types";
 import { cn } from "@/lib/utils";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 
 // ── Time grouping ────────────────────────────────────────────────────────────
 
@@ -12,7 +13,8 @@ type TimeGroup = "today" | "yesterday" | "last7days" | "older";
 
 type FolderItem =
   | { kind: "note"; data: Note }
-  | { kind: "tasklist"; data: TaskList };
+  | { kind: "tasklist"; data: TaskList }
+  | { kind: "file"; data: FileEntry };
 
 const GROUP_LABELS: Record<TimeGroup, string> = {
   today: "Today",
@@ -54,18 +56,40 @@ export function FolderSidebarPanel({ folderId, activeTaskListId }: FolderSidebar
   const { setActiveView } = useUiStore();
   const [notes, setNotes] = useState<Note[]>([]);
   const [taskLists, setTaskLists] = useState<TaskList[]>([]);
+  const [files, setFiles] = useState<FileEntry[]>([]);
   const [loading, setLoading] = useState(true);
 
   const folder = findFolder(folders, folderId);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChosen = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const picked = e.target.files?.[0];
+      e.target.value = "";
+      if (!picked) return;
+      const buf = await picked.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buf));
+      const added = await addFileToFolder({
+        folderId,
+        fileName: picked.name,
+        bytes,
+        mimeType: picked.type || null,
+      });
+      setFiles((prev) => [...prev, added]);
+    },
+    [folderId]
+  );
 
   useEffect(() => {
     setLoading(true);
     Promise.all([
       getNotesForFolder(folderId),
       getTaskListsForFolder(folderId),
-    ]).then(([loadedNotes, loadedTaskLists]) => {
+      getFilesForFolder(folderId),
+    ]).then(([loadedNotes, loadedTaskLists, loadedFiles]) => {
       setNotes(loadedNotes);
       setTaskLists(loadedTaskLists);
+      setFiles(loadedFiles);
       setLoading(false);
     });
   }, [folderId]);
@@ -73,6 +97,7 @@ export function FolderSidebarPanel({ folderId, activeTaskListId }: FolderSidebar
   const allItems: FolderItem[] = [
     ...notes.map((n) => ({ kind: "note" as const, data: n })),
     ...taskLists.map((tl) => ({ kind: "tasklist" as const, data: tl })),
+    ...files.map((f) => ({ kind: "file" as const, data: f })),
   ].sort(
     (a, b) =>
       new Date(b.data.updatedAt).getTime() - new Date(a.data.updatedAt).getTime()
@@ -91,10 +116,41 @@ export function FolderSidebarPanel({ folderId, activeTaskListId }: FolderSidebar
   return (
     <div className="w-56 shrink-0 border-r border-border flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center px-3 py-3 shrink-0 border-b border-border">
-        <span className="text-sm font-semibold text-foreground truncate">
+      <div className="flex items-center px-3 py-3 shrink-0 border-b border-border gap-1">
+        <span className="text-sm font-semibold text-foreground truncate flex-1">
           {folder?.name ?? "Folder"}
         </span>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <button
+              className="shrink-0 text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded hover:bg-accent"
+              title="Add to folder"
+            >
+              <Plus size={13} />
+            </button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              side="bottom"
+              align="end"
+              className="z-50 min-w-36 rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-2xl text-xs"
+            >
+              <DropdownMenu.Item
+                onSelect={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 px-3 py-1.5 cursor-pointer outline-none hover:bg-accent focus:bg-accent"
+              >
+                <Paperclip size={12} className="text-muted-foreground" />
+                Add File
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="hidden"
+          onChange={handleFileChosen}
+        />
       </div>
 
       {/* Item list */}
@@ -113,7 +169,25 @@ export function FolderSidebarPanel({ folderId, activeTaskListId }: FolderSidebar
                   {GROUP_LABELS[group]}
                 </div>
                 {items.map((item) =>
-                  item.kind === "note" ? (
+                  item.kind === "file" ? (
+                    <button
+                      key={item.data.id}
+                      onClick={() => openFile(item.data.id)}
+                      className="w-full text-left px-3 py-2.5 transition-colors hover:bg-accent/50 text-foreground cursor-pointer"
+                    >
+                      <div className="flex items-start gap-1.5">
+                        <FileIcon size={12} className="text-muted-foreground shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-xs font-medium truncate block">
+                            {item.data.fileName}
+                          </span>
+                          <span className="text-[11px] text-muted-foreground/60 mt-0.5 block">
+                            {formatDistanceToNow(new Date(item.data.updatedAt), { addSuffix: true })}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  ) : item.kind === "note" ? (
                     <button
                       key={item.data.id}
                       onClick={() =>

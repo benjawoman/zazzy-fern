@@ -196,6 +196,7 @@ pub async fn update_task(
     due_date: Option<String>,
     due_time: Option<String>,
     reminder_at: Option<String>,
+    sort_order: Option<f64>,
 ) -> Result<(), String> {
     let ts = now();
     let completed_at = status.as_deref().map(|s| {
@@ -211,6 +212,7 @@ pub async fn update_task(
             due_date = COALESCE(?, due_date),
             due_time = COALESCE(?, due_time),
             reminder_at = COALESCE(?, reminder_at),
+            sort_order = COALESCE(?, sort_order),
             completed_at = CASE WHEN ? IS NOT NULL THEN ? ELSE completed_at END,
             updated_at = ?
          WHERE id = ?",
@@ -222,6 +224,7 @@ pub async fn update_task(
     .bind(due_date)
     .bind(due_time)
     .bind(reminder_at)
+    .bind(sort_order)
     .bind(&completed_at)
     .bind(&completed_at)
     .bind(&ts)

@@ -2,7 +2,7 @@
 
 A personal productivity desktop app for organizing everyday thoughts, notes, and tasks. Built with Tauri (Rust backend) + React/TypeScript frontend.
 
-**Current version: 0.1.6.1**
+**Current version: 0.1.8**
 
 ---
 

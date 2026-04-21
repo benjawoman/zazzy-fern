@@ -33,11 +33,13 @@ import {
   GripVertical,
   ListChecks,
   FileText,
+  Paperclip,
+  File as FileIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUiStore, useFolderStore } from "@/store";
-import { reorderFolders, getNotesForFolder, getTaskListsForFolder, createTaskList, updateTaskList, deleteTaskList } from "@/lib/tauri";
-import type { Folder as FolderType, Note, TaskList, ActiveView } from "@/types";
+import { reorderFolders, getNotesForFolder, getTaskListsForFolder, createTaskList, updateTaskList, deleteTaskList, getFilesForFolder, addFileToFolder, deleteFile, renameFile, openFile } from "@/lib/tauri";
+import type { Folder as FolderType, Note, TaskList, FileEntry, ActiveView } from "@/types";
 
 const FOLDER_COLORS = [
   { name: "Default", value: null },
@@ -365,8 +367,12 @@ function FolderNode({
 
   const [notes, setNotes] = useState<Note[]>([]);
   const [taskLists, setTaskLists] = useState<TaskList[]>([]);
+  const [files, setFiles] = useState<FileEntry[]>([]);
   const [renamingTaskListId, setRenamingTaskListId] = useState<string | null>(null);
   const [taskListRenameValue, setTaskListRenameValue] = useState("");
+  const [renamingFileId, setRenamingFileId] = useState<string | null>(null);
+  const [fileRenameValue, setFileRenameValue] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const renameInputRef = useRef<HTMLInputElement>(null);
   const escapeRef = useRef(false);
@@ -388,9 +394,11 @@ function FolderNode({
       Promise.all([
         getNotesForFolder(folder.id),
         getTaskListsForFolder(folder.id),
-      ]).then(([loadedNotes, loadedTaskLists]) => {
+        getFilesForFolder(folder.id),
+      ]).then(([loadedNotes, loadedTaskLists, loadedFiles]) => {
         setNotes(loadedNotes);
         setTaskLists(loadedTaskLists);
+        setFiles(loadedFiles);
       });
     }
   }, [isExpanded, folder.id]);
@@ -419,6 +427,42 @@ function FolderNode({
   const handleDeleteTaskList = useCallback(async (id: string) => {
     await deleteTaskList(id);
     setTaskLists((prev) => prev.filter((tl) => tl.id !== id));
+  }, []);
+
+  const handlePickFile = useCallback(() => {
+    if (!isExpanded) toggleExpanded(folder.id);
+    fileInputRef.current?.click();
+  }, [folder.id, isExpanded, toggleExpanded]);
+
+  const handleFileChosen = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const picked = e.target.files?.[0];
+      e.target.value = "";
+      if (!picked) return;
+      const buf = await picked.arrayBuffer();
+      const bytes = Array.from(new Uint8Array(buf));
+      const added = await addFileToFolder({
+        folderId: folder.id,
+        fileName: picked.name,
+        bytes,
+        mimeType: picked.type || null,
+      });
+      setFiles((prev) => [...prev, added]);
+    },
+    [folder.id]
+  );
+
+  const handleDeleteFile = useCallback(async (id: string) => {
+    await deleteFile(id);
+    setFiles((prev) => prev.filter((f) => f.id !== id));
+  }, []);
+
+  const commitFileRename = useCallback(async (id: string, value: string) => {
+    setRenamingFileId(null);
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    await renameFile({ id, fileName: trimmed });
+    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, fileName: trimmed } : f)));
   }, []);
 
   const handleRowClick = () => {
@@ -553,6 +597,13 @@ function FolderNode({
                       <ListChecks size={12} className="text-muted-foreground" />
                       New Task List
                     </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      onSelect={handlePickFile}
+                      className="flex items-center gap-2 px-3 py-1.5 cursor-pointer outline-none hover:bg-accent focus:bg-accent"
+                    >
+                      <Paperclip size={12} className="text-muted-foreground" />
+                      Add File
+                    </DropdownMenu.Item>
                   </DropdownMenu.Content>
                 </DropdownMenu.Portal>
               </DropdownMenu.Root>
@@ -575,6 +626,13 @@ function FolderNode({
             >
               <ListChecks size={12} className="text-muted-foreground" />
               New Task List
+            </ContextMenu.Item>
+            <ContextMenu.Item
+              onSelect={handlePickFile}
+              className="flex items-center gap-2 px-3 py-1.5 cursor-pointer outline-none hover:bg-accent focus:bg-accent"
+            >
+              <Paperclip size={12} className="text-muted-foreground" />
+              Add File
             </ContextMenu.Item>
             <ContextMenu.Item
               onSelect={() => startRename(folder)}
@@ -619,6 +677,13 @@ function FolderNode({
         </ContextMenu.Portal>
       </ContextMenu.Root>
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={handleFileChosen}
+      />
+
       {/* Children */}
       {isExpanded && (
         <>
@@ -653,6 +718,7 @@ function FolderNode({
           {[
             ...notes.map((n) => ({ kind: "note" as const, data: n, date: new Date(n.updatedAt) })),
             ...taskLists.map((tl) => ({ kind: "tasklist" as const, data: tl, date: new Date(tl.updatedAt) })),
+            ...files.map((f) => ({ kind: "file" as const, data: f, date: new Date(f.updatedAt) })),
           ]
             .sort((a, b) => b.date.getTime() - a.date.getTime())
             .map((item) =>
@@ -674,7 +740,7 @@ function FolderNode({
                     })
                   }
                 />
-              ) : (
+              ) : item.kind === "tasklist" ? (
                 <TaskListItem
                   key={item.data.id}
                   taskList={item.data}
@@ -693,11 +759,133 @@ function FolderNode({
                   onCommitRename={(v) => commitTaskListRename(item.data.id, v)}
                   onDelete={() => handleDeleteTaskList(item.data.id)}
                 />
+              ) : (
+                <SidebarFileItem
+                  key={item.data.id}
+                  file={item.data}
+                  depth={depth + 1}
+                  isRenaming={renamingFileId === item.data.id}
+                  renameValue={fileRenameValue}
+                  setRenameValue={setFileRenameValue}
+                  onOpen={() => openFile(item.data.id)}
+                  onStartRename={() => {
+                    setRenamingFileId(item.data.id);
+                    setFileRenameValue(item.data.fileName);
+                  }}
+                  onCommitRename={(v) => commitFileRename(item.data.id, v)}
+                  onDelete={() => handleDeleteFile(item.data.id)}
+                />
               )
             )}
         </>
       )}
     </div>
+  );
+}
+
+// ── SidebarFileItem ───────────────────────────────────────────────────────────
+
+interface SidebarFileItemProps {
+  file: FileEntry;
+  depth: number;
+  isRenaming: boolean;
+  renameValue: string;
+  setRenameValue: (v: string) => void;
+  onOpen: () => void;
+  onStartRename: () => void;
+  onCommitRename: (value: string) => void;
+  onDelete: () => void;
+}
+
+function SidebarFileItem({
+  file,
+  depth,
+  isRenaming,
+  renameValue,
+  setRenameValue,
+  onOpen,
+  onStartRename,
+  onCommitRename,
+  onDelete,
+}: SidebarFileItemProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const escapeRef = useRef(false);
+
+  useEffect(() => {
+    if (isRenaming) {
+      escapeRef.current = false;
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isRenaming]);
+
+  return (
+    <ContextMenu.Root>
+      <ContextMenu.Trigger asChild>
+        <div
+          className={cn(
+            "flex items-center gap-1.5 py-[3px] rounded-md text-xs transition-colors cursor-pointer",
+            "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+          )}
+          style={{ paddingLeft: `${6 + depth * 14 + 14}px`, paddingRight: "4px" }}
+          onClick={!isRenaming ? onOpen : undefined}
+          onDoubleClick={() => !isRenaming && onStartRename()}
+        >
+          <FileIcon size={12} className="shrink-0 mr-0.5" />
+          {isRenaming ? (
+            <input
+              ref={inputRef}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  onCommitRename(renameValue);
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  escapeRef.current = true;
+                  onCommitRename(file.fileName);
+                }
+              }}
+              onBlur={() => {
+                if (!escapeRef.current) onCommitRename(renameValue);
+                escapeRef.current = false;
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="flex-1 min-w-0 bg-transparent border-none outline-none text-xs text-sidebar-foreground"
+            />
+          ) : (
+            <span className="truncate flex-1">{file.fileName}</span>
+          )}
+        </div>
+      </ContextMenu.Trigger>
+
+      <ContextMenu.Portal>
+        <ContextMenu.Content className="z-50 min-w-36 rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-2xl text-xs">
+          <ContextMenu.Item
+            onSelect={onOpen}
+            className="flex items-center px-3 py-1.5 cursor-pointer outline-none hover:bg-accent focus:bg-accent"
+          >
+            Open
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            onSelect={onStartRename}
+            className="flex items-center px-3 py-1.5 cursor-pointer outline-none hover:bg-accent focus:bg-accent"
+          >
+            Rename
+          </ContextMenu.Item>
+          <ContextMenu.Separator className="h-px bg-border my-1 mx-1" />
+          <ContextMenu.Item
+            onSelect={onDelete}
+            className="flex items-center px-3 py-1.5 cursor-pointer outline-none hover:bg-red-500/15 focus:bg-red-500/15 text-red-400"
+          >
+            Delete
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu.Root>
   );
 }
 

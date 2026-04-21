@@ -52,6 +52,18 @@ export interface Task {
   children?: Task[];
 }
 
+export interface FileEntry {
+  id: string;
+  folderId: string;
+  fileName: string;
+  filePath: string;
+  fileSize: number;
+  mimeType: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Tag {
   id: string;
   name: string;

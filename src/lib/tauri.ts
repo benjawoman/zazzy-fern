@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Folder, Note, TaskList, Task, Tag, CalendarFeed, CalendarEvent } from "@/types";
+import type { Folder, Note, TaskList, Task, Tag, CalendarFeed, CalendarEvent, FileEntry } from "@/types";
 
 // ── Folders ─────────────────────────────────────────────────────────────────
 
@@ -173,3 +173,24 @@ export const createEvent = (args: {
 
 export const openUrlInBrowser = (url: string): Promise<void> =>
   invoke("open_url", { url });
+
+// ── Files ────────────────────────────────────────────────────────────────────
+
+export const getFilesForFolder = (folderId: string): Promise<FileEntry[]> =>
+  invoke("get_files_for_folder", { folderId });
+
+export const addFileToFolder = (args: {
+  folderId: string;
+  fileName: string;
+  bytes: number[];
+  mimeType?: string | null;
+}): Promise<FileEntry> => invoke("add_file_to_folder", args);
+
+export const deleteFile = (id: string): Promise<void> =>
+  invoke("delete_file", { id });
+
+export const renameFile = (args: { id: string; fileName: string }): Promise<void> =>
+  invoke("rename_file", args);
+
+export const openFile = (id: string): Promise<void> =>
+  invoke("open_file", { id });

@@ -33,6 +33,8 @@ pub fn run() {
                     .expect("failed to create attachments dir");
                 std::fs::create_dir_all(data_dir.join("calendars"))
                     .expect("failed to create calendars dir");
+                std::fs::create_dir_all(data_dir.join("files"))
+                    .expect("failed to create files dir");
 
                 let pool = init_db(&data_dir)
                     .await
@@ -85,6 +87,12 @@ pub fn run() {
             commands::get_events_in_range,
             commands::create_event,
             commands::open_url,
+            // Files
+            commands::get_files_for_folder,
+            commands::add_file_to_folder,
+            commands::delete_file,
+            commands::rename_file,
+            commands::open_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

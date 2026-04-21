@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as ContextMenu from "@radix-ui/react-context-menu";
+import * as Popover from "@radix-ui/react-popover";
 import { Plus, Circle, CheckCircle2, ChevronRight, ChevronDown } from "lucide-react";
-import { getTasksForList, createTask, updateTask, deleteTask } from "@/lib/tauri";
+import { getTasksForList, createTask, updateTask, deleteTask, updateTaskList } from "@/lib/tauri";
 import type { Task } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,10 @@ export function TaskListView({ taskListId, title = "Tasks" }: TaskListViewProps)
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [localTitle, setLocalTitle] = useState(title);
+  const [isTitleEditing, setIsTitleEditing] = useState(false);
+  const titleInputRef = useRef<HTMLInputElement>(null);
+  const titleEscapeRef = useRef(false);
 
   const reload = useCallback(async () => {
     const loaded = await getTasksForList(taskListId);
@@ -81,11 +86,7 @@ export function TaskListView({ taskListId, title = "Tasks" }: TaskListViewProps)
         setTasks((prev) => updateInTree(prev, task.id, { title: trimmed }));
       }
       if (trimmed) {
-        const sibling = await createTask({
-          taskListId,
-          title: "",
-          parentTaskId: task.parentTaskId,
-        });
+        const sibling = await createTask({ taskListId, title: "", parentTaskId: task.parentTaskId });
         await reload();
         setFocusId(sibling.id);
       }
@@ -98,7 +99,30 @@ export function TaskListView({ taskListId, title = "Tasks" }: TaskListViewProps)
     setTasks((prev) => removeFromTree(prev, taskId));
   }, []);
 
+  const handlePatchTask = useCallback(async (taskId: string, patch: Partial<Task>) => {
+    await updateTask({ id: taskId, ...patch });
+    setTasks((prev) => updateInTree(prev, taskId, patch));
+  }, []);
+
   const clearFocus = useCallback(() => setFocusId(null), []);
+
+  useEffect(() => {
+    if (isTitleEditing) {
+      titleEscapeRef.current = false;
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    }
+  }, [isTitleEditing]);
+
+  const commitListTitle = useCallback(
+    async (value: string) => {
+      const trimmed = value.trim() || localTitle;
+      setLocalTitle(trimmed);
+      setIsTitleEditing(false);
+      await updateTaskList({ id: taskListId, title: trimmed });
+    },
+    [taskListId, localTitle]
+  );
 
   const activeTasks = tasks.filter((t) => t.status !== "done" && t.status !== "cancelled");
   const doneTasks = tasks.filter((t) => t.status === "done");
@@ -111,6 +135,7 @@ export function TaskListView({ taskListId, title = "Tasks" }: TaskListViewProps)
     onEnterKey: handleEnterKey,
     onDelete: handleDelete,
     onAddSubtask: handleAddTask,
+    onPatchTask: handlePatchTask,
   };
 
   if (loading) {
@@ -120,13 +145,29 @@ export function TaskListView({ taskListId, title = "Tasks" }: TaskListViewProps)
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
-        <span className="text-base font-semibold text-foreground">{title}</span>
+        {isTitleEditing ? (
+          <input
+            ref={titleInputRef}
+            value={localTitle}
+            onChange={(e) => setLocalTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); titleEscapeRef.current = true; commitListTitle(localTitle); }
+              if (e.key === "Escape") { e.preventDefault(); titleEscapeRef.current = true; setLocalTitle(title); setIsTitleEditing(false); }
+            }}
+            onBlur={() => { if (!titleEscapeRef.current) commitListTitle(localTitle); titleEscapeRef.current = false; }}
+            className="flex-1 min-w-0 bg-transparent border-none outline-none text-base font-semibold text-foreground"
+          />
+        ) : (
+          <span className="text-base font-semibold text-foreground cursor-text" onClick={() => setIsTitleEditing(true)}>
+            {localTitle}
+          </span>
+        )}
         <button
           onClick={() => handleAddTask(null)}
-          className="p-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors"
-          title="New task"
+          className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-accent text-muted-foreground hover:text-foreground transition-colors shrink-0 text-xs cursor-pointer"
         >
           <Plus size={14} />
+          Add task
         </button>
       </div>
 
@@ -134,7 +175,7 @@ export function TaskListView({ taskListId, title = "Tasks" }: TaskListViewProps)
         {tasks.length === 0 ? (
           <div className="px-4 py-4 text-xs text-muted-foreground/50">
             No tasks yet.{" "}
-            <button onClick={() => handleAddTask(null)} className="text-primary hover:underline">
+            <button onClick={() => handleAddTask(null)} className="text-primary hover:underline cursor-pointer">
               Add one
             </button>
           </div>
@@ -143,16 +184,14 @@ export function TaskListView({ taskListId, title = "Tasks" }: TaskListViewProps)
             {activeTasks.map((task) => (
               <TaskRow key={task.id} task={task} depth={0} {...sharedRowProps} />
             ))}
-
             {doneTasks.length > 0 && (
               <CompletedSection tasks={doneTasks} sharedRowProps={sharedRowProps} />
             )}
           </>
         )}
-
         <button
           onClick={() => handleAddTask(null)}
-          className="flex items-center gap-2 w-full px-4 py-2 mt-1 text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors rounded-md hover:bg-accent/40"
+          className="flex items-center gap-2 w-full px-4 py-2 mt-1 text-xs text-muted-foreground/40 hover:text-muted-foreground transition-colors rounded-md hover:bg-accent/40 cursor-pointer"
         >
           <Plus size={11} />
           Add a task
@@ -172,20 +211,18 @@ function CompletedSection({
   sharedRowProps: Omit<TaskRowProps, "task" | "depth">;
 }) {
   const [open, setOpen] = useState(false);
-
   return (
     <div className="mt-3">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 px-4 py-1 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors w-full"
+        className="flex items-center gap-1.5 px-4 py-1 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors w-full cursor-pointer"
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         Completed ({tasks.length})
       </button>
-      {open &&
-        tasks.map((task) => (
-          <TaskRow key={task.id} task={task} depth={0} {...sharedRowProps} />
-        ))}
+      {open && tasks.map((task) => (
+        <TaskRow key={task.id} task={task} depth={0} {...sharedRowProps} />
+      ))}
     </div>
   );
 }
@@ -202,6 +239,7 @@ interface TaskRowProps {
   onEnterKey: (task: Task, editedTitle: string) => Promise<void>;
   onDelete: (taskId: string) => void;
   onAddSubtask: (parentId: string) => void;
+  onPatchTask: (taskId: string, patch: Partial<Task>) => Promise<void>;
 }
 
 function TaskRow({
@@ -214,10 +252,12 @@ function TaskRow({
   onEnterKey,
   onDelete,
   onAddSubtask,
+  onPatchTask,
 }: TaskRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(task.title);
-  const [expanded, setExpanded] = useState(true);
+  const [childrenExpanded, setChildrenExpanded] = useState(true);
+
   const inputRef = useRef<HTMLInputElement>(null);
   const suppressBlurRef = useRef(false);
 
@@ -240,139 +280,212 @@ function TaskRow({
     }
   }, [isEditing, task.title]);
 
-  const startEdit = () => {
-    if (!isEditing) {
-      setEditValue(task.title);
-      setIsEditing(true);
-    }
-  };
-
   const handleBlur = () => {
-    if (suppressBlurRef.current) {
-      suppressBlurRef.current = false;
-      return;
-    }
+    if (suppressBlurRef.current) { suppressBlurRef.current = false; return; }
     setIsEditing(false);
     onCommitTitle(task.id, editValue);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
-      e.preventDefault();
-      suppressBlurRef.current = true;
-      setIsEditing(false);
-      onEnterKey(task, editValue);
+      e.preventDefault(); suppressBlurRef.current = true; setIsEditing(false); onEnterKey(task, editValue);
     }
     if (e.key === "Escape") {
-      e.preventDefault();
-      suppressBlurRef.current = true;
-      setIsEditing(false);
-      if (!task.title) {
-        onDelete(task.id);
-      }
+      e.preventDefault(); suppressBlurRef.current = true; setIsEditing(false); if (!task.title) onDelete(task.id);
     }
     if (e.key === "Backspace" && editValue === "") {
-      e.preventDefault();
-      suppressBlurRef.current = true;
-      setIsEditing(false);
-      onDelete(task.id);
+      e.preventDefault(); suppressBlurRef.current = true; setIsEditing(false); onDelete(task.id);
     }
   };
 
-  const sharedChildProps = {
-    focusId,
-    onClearFocus,
-    onToggleDone,
-    onCommitTitle,
-    onEnterKey,
-    onDelete,
-    onAddSubtask,
-  };
+  const sharedChildProps = { focusId, onClearFocus, onToggleDone, onCommitTitle, onEnterKey, onDelete, onAddSubtask, onPatchTask };
 
   return (
     <div>
-      <ContextMenu.Root>
-        <ContextMenu.Trigger asChild>
-          <div
-            className="group flex items-center gap-1.5 py-[3px] rounded-md hover:bg-accent/40 transition-colors cursor-default"
-            style={{ paddingLeft: `${16 + depth * 20}px`, paddingRight: "8px" }}
-          >
-            <span
-              className={cn(
-                "shrink-0 w-3.5 flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground/70 cursor-pointer transition-colors",
-                !hasChildren && "invisible pointer-events-none"
-              )}
-              onClick={() => setExpanded((e) => !e)}
+      <Popover.Root>
+        <ContextMenu.Root>
+          <ContextMenu.Trigger asChild>
+            <div
+              className="group flex items-center gap-1.5 py-[3px] rounded-md hover:bg-accent/40 transition-colors cursor-default"
+              style={{ paddingLeft: `${16 + depth * 20}px`, paddingRight: "8px" }}
             >
-              {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-            </span>
-
-            <button
-              className="shrink-0 text-muted-foreground hover:text-primary transition-colors"
-              onClick={() => onToggleDone(task)}
-            >
-              {isDone ? (
-                <CheckCircle2 size={15} className="text-primary" />
-              ) : (
-                <Circle size={15} />
-              )}
-            </button>
-
-            {isEditing ? (
-              <input
-                ref={inputRef}
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={handleBlur}
-                className={cn(
-                  "flex-1 min-w-0 bg-transparent border-none outline-none text-sm py-1",
-                  isDone && "line-through text-muted-foreground"
-                )}
-              />
-            ) : (
               <span
                 className={cn(
-                  "flex-1 min-w-0 text-sm py-1 truncate cursor-text select-none",
-                  isDone ? "line-through text-muted-foreground/60" : "text-foreground",
-                  !task.title && "text-muted-foreground/40 italic"
+                  "shrink-0 w-3.5 flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground/70 cursor-pointer transition-colors",
+                  !hasChildren && "invisible pointer-events-none"
                 )}
-                onClick={startEdit}
-                onDoubleClick={startEdit}
+                onClick={() => setChildrenExpanded((e) => !e)}
               >
-                {task.title || "Untitled"}
+                {childrenExpanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
               </span>
-            )}
-          </div>
-        </ContextMenu.Trigger>
 
-        <ContextMenu.Portal>
-          <ContextMenu.Content className="z-50 min-w-36 rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-2xl text-xs">
-            <ContextMenu.Item
-              onSelect={() => onAddSubtask(task.id)}
-              className="flex items-center gap-2 px-3 py-1.5 cursor-pointer outline-none hover:bg-accent focus:bg-accent"
-            >
-              <Plus size={12} className="text-muted-foreground" />
-              Add Subtask
-            </ContextMenu.Item>
-            <ContextMenu.Separator className="h-px bg-border my-1 mx-1" />
-            <ContextMenu.Item
-              onSelect={() => onDelete(task.id)}
-              className="flex items-center px-3 py-1.5 cursor-pointer outline-none hover:bg-red-500/15 focus:bg-red-500/15 text-red-400"
-            >
-              Delete
-            </ContextMenu.Item>
-          </ContextMenu.Content>
-        </ContextMenu.Portal>
-      </ContextMenu.Root>
+              <button
+                className="shrink-0 text-muted-foreground hover:text-primary transition-colors cursor-pointer"
+                onClick={() => onToggleDone(task)}
+              >
+                {isDone ? <CheckCircle2 size={15} className="text-primary" /> : <Circle size={15} />}
+              </button>
 
-      {expanded && hasChildren && (
+              {isEditing ? (
+                <input
+                  ref={inputRef}
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  onBlur={handleBlur}
+                  className={cn(
+                    "flex-1 min-w-0 bg-transparent border-none outline-none text-sm py-1",
+                    isDone && "line-through text-muted-foreground"
+                  )}
+                />
+              ) : (
+                <Popover.Trigger asChild>
+                  <div className="flex-1 min-w-0 py-1 cursor-pointer">
+                    <span
+                      className={cn(
+                        "block text-sm truncate select-none hover:underline underline-offset-2",
+                        isDone ? "line-through text-muted-foreground/60" : "text-foreground",
+                        !task.title && "text-muted-foreground/40 italic"
+                      )}
+                    >
+                      {task.title || "Untitled"}
+                    </span>
+                    {task.notes && (
+                      <span className="block text-[11px] text-muted-foreground/45 truncate leading-snug mt-0.5 select-none">
+                        {task.notes}
+                      </span>
+                    )}
+                  </div>
+                </Popover.Trigger>
+              )}
+            </div>
+          </ContextMenu.Trigger>
+
+          <ContextMenu.Portal>
+            <ContextMenu.Content className="z-50 min-w-36 rounded-md border border-border bg-popover py-1 text-popover-foreground shadow-2xl text-xs">
+              <ContextMenu.Item
+                onSelect={() => onAddSubtask(task.id)}
+                className="flex items-center gap-2 px-3 py-1.5 cursor-pointer outline-none hover:bg-accent focus:bg-accent"
+              >
+                <Plus size={12} className="text-muted-foreground" />
+                Add Subtask
+              </ContextMenu.Item>
+              <ContextMenu.Separator className="h-px bg-border my-1 mx-1" />
+              <ContextMenu.Item
+                onSelect={() => onDelete(task.id)}
+                className="flex items-center px-3 py-1.5 cursor-pointer outline-none hover:bg-red-500/15 focus:bg-red-500/15 text-red-400"
+              >
+                Delete
+              </ContextMenu.Item>
+            </ContextMenu.Content>
+          </ContextMenu.Portal>
+        </ContextMenu.Root>
+
+        <Popover.Portal>
+          <Popover.Content
+            side="right"
+            sideOffset={12}
+            align="start"
+            avoidCollisions={false}
+            className="z-40 w-68 rounded-xl border border-border bg-card shadow-xl outline-none p-4"
+          >
+            <TaskDetailContent task={task} onPatchTask={onPatchTask} />
+          </Popover.Content>
+        </Popover.Portal>
+      </Popover.Root>
+
+      {childrenExpanded && hasChildren && (
         <div>
           {task.children!.map((child) => (
             <TaskRow key={child.id} task={child} depth={depth + 1} {...sharedChildProps} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── TaskDetailContent ─────────────────────────────────────────────────────────
+
+function TaskDetailContent({
+  task,
+  onPatchTask,
+}: {
+  task: Task;
+  onPatchTask: (taskId: string, patch: Partial<Task>) => Promise<void>;
+}) {
+  const [titleValue, setTitleValue] = useState(task.title);
+  const [notesValue, setNotesValue] = useState(task.notes ?? "");
+  const [dueDateValue, setDueDateValue] = useState(task.dueDate ?? "");
+  const [dueTimeValue, setDueTimeValue] = useState(task.dueTime ?? "");
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* Title */}
+      <input
+        value={titleValue}
+        onChange={(e) => setTitleValue(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+        onBlur={() => {
+          const trimmed = titleValue.trim();
+          if (trimmed && trimmed !== task.title) onPatchTask(task.id, { title: trimmed });
+        }}
+        className="w-full bg-transparent text-sm font-semibold text-foreground outline-none border-none placeholder:text-muted-foreground/30"
+        placeholder="Task title"
+      />
+
+      <div className="h-px bg-border/60" />
+
+      {/* Date and time */}
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <p className="text-[11px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-1">
+            Date
+          </p>
+          <input
+            type="date"
+            value={dueDateValue}
+            onChange={(e) => {
+              setDueDateValue(e.target.value);
+              onPatchTask(task.id, { dueDate: e.target.value || null });
+            }}
+            style={{ colorScheme: "dark" }}
+            className="w-full bg-muted/40 rounded-md px-2 py-1.5 text-xs text-foreground outline-none border border-border/50 focus:border-border transition-colors cursor-pointer"
+          />
+        </div>
+        <div>
+          <p className="text-[11px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-1">
+            Time
+          </p>
+          <input
+            type="time"
+            value={dueTimeValue}
+            onChange={(e) => {
+              setDueTimeValue(e.target.value);
+              onPatchTask(task.id, { dueTime: e.target.value || null });
+            }}
+            style={{ colorScheme: "dark" }}
+            className="w-full bg-muted/40 rounded-md px-2 py-1.5 text-xs text-foreground outline-none border border-border/50 focus:border-border transition-colors cursor-pointer"
+          />
+        </div>
+      </div>
+
+      {/* Notes */}
+      <div>
+        <p className="text-[11px] font-semibold text-muted-foreground/50 uppercase tracking-widest mb-1">
+          Notes
+        </p>
+        <textarea
+          value={notesValue}
+          onChange={(e) => setNotesValue(e.target.value)}
+          onBlur={() => {
+            if (notesValue !== (task.notes ?? "")) onPatchTask(task.id, { notes: notesValue });
+          }}
+          placeholder="Add notes…"
+          rows={2}
+          className="w-full bg-muted/40 rounded-lg px-2.5 py-2 text-xs text-foreground placeholder:text-muted-foreground/30 outline-none border border-border/50 focus:border-border resize-none transition-colors leading-relaxed"
+        />
+      </div>
     </div>
   );
 }

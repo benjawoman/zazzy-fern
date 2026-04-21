@@ -32,11 +32,12 @@ import {
   FolderOpen,
   GripVertical,
   ListChecks,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUiStore, useFolderStore } from "@/store";
-import { reorderFolders, getTaskListsForFolder, createTaskList, updateTaskList, deleteTaskList } from "@/lib/tauri";
-import type { Folder as FolderType, TaskList, ActiveView } from "@/types";
+import { reorderFolders, getNotesForFolder, getTaskListsForFolder, createTaskList, updateTaskList, deleteTaskList } from "@/lib/tauri";
+import type { Folder as FolderType, Note, TaskList, ActiveView } from "@/types";
 
 const FOLDER_COLORS = [
   { name: "Default", value: null },
@@ -176,7 +177,7 @@ export function Sidebar() {
       >
         <Search size={12} className="text-muted-foreground" />
         <span className="text-muted-foreground">Search...</span>
-        <span className="ml-auto text-muted-foreground/50 text-[10px]">Ctrl+F</span>
+        <span className="ml-auto text-muted-foreground/50 text-[11px]">Ctrl+F</span>
       </button>
 
       {/* Main nav */}
@@ -194,7 +195,7 @@ export function Sidebar() {
 
       {/* Folders header */}
       <div className="px-3 pt-4 pb-1.5 flex items-center justify-between">
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+        <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-widest">
           Folders
         </span>
         <button
@@ -362,6 +363,7 @@ function FolderNode({
   const isActive = activeView.type === "folder" && activeView.folderId === folder.id;
   const isRenaming = renamingId === folder.id;
 
+  const [notes, setNotes] = useState<Note[]>([]);
   const [taskLists, setTaskLists] = useState<TaskList[]>([]);
   const [renamingTaskListId, setRenamingTaskListId] = useState<string | null>(null);
   const [taskListRenameValue, setTaskListRenameValue] = useState("");
@@ -383,7 +385,13 @@ function FolderNode({
 
   useEffect(() => {
     if (isExpanded) {
-      getTaskListsForFolder(folder.id).then(setTaskLists);
+      Promise.all([
+        getNotesForFolder(folder.id),
+        getTaskListsForFolder(folder.id),
+      ]).then(([loadedNotes, loadedTaskLists]) => {
+        setNotes(loadedNotes);
+        setTaskLists(loadedTaskLists);
+      });
     }
   }, [isExpanded, folder.id]);
 
@@ -424,7 +432,7 @@ function FolderNode({
     toggleExpanded(folder.id);
   };
 
-  const showExpanded = isExpanded && (hasChildren || taskLists.length > 0);
+  const showExpanded = isExpanded && (hasChildren || notes.length > 0 || taskLists.length > 0);
 
   return (
     <div
@@ -642,23 +650,83 @@ function FolderNode({
             </SortableContext>
           )}
 
-          {taskLists.map((tl) => (
-            <TaskListItem
-              key={tl.id}
-              taskList={tl}
-              depth={depth + 1}
-              isActive={activeView.type === "tasklist" && activeView.taskListId === tl.id}
-              isRenaming={renamingTaskListId === tl.id}
-              renameValue={taskListRenameValue}
-              setRenameValue={setTaskListRenameValue}
-              onSelect={() => setActiveView({ type: "tasklist", taskListId: tl.id, title: tl.title })}
-              onStartRename={() => { setRenamingTaskListId(tl.id); setTaskListRenameValue(tl.title); }}
-              onCommitRename={(v) => commitTaskListRename(tl.id, v)}
-              onDelete={() => handleDeleteTaskList(tl.id)}
-            />
-          ))}
+          {[
+            ...notes.map((n) => ({ kind: "note" as const, data: n, date: new Date(n.updatedAt) })),
+            ...taskLists.map((tl) => ({ kind: "tasklist" as const, data: tl, date: new Date(tl.updatedAt) })),
+          ]
+            .sort((a, b) => b.date.getTime() - a.date.getTime())
+            .map((item) =>
+              item.kind === "note" ? (
+                <SidebarNoteItem
+                  key={item.data.id}
+                  note={item.data}
+                  depth={depth + 1}
+                  isActive={
+                    activeView.type === "folder" &&
+                    activeView.folderId === folder.id &&
+                    activeView.initialNoteId === item.data.id
+                  }
+                  onSelect={() =>
+                    setActiveView({
+                      type: "folder",
+                      folderId: folder.id,
+                      initialNoteId: item.data.id,
+                    })
+                  }
+                />
+              ) : (
+                <TaskListItem
+                  key={item.data.id}
+                  taskList={item.data}
+                  depth={depth + 1}
+                  isActive={activeView.type === "tasklist" && activeView.taskListId === item.data.id}
+                  isRenaming={renamingTaskListId === item.data.id}
+                  renameValue={taskListRenameValue}
+                  setRenameValue={setTaskListRenameValue}
+                  onSelect={() =>
+                    setActiveView({ type: "tasklist", taskListId: item.data.id, title: item.data.title, folderId: folder.id })
+                  }
+                  onStartRename={() => {
+                    setRenamingTaskListId(item.data.id);
+                    setTaskListRenameValue(item.data.title);
+                  }}
+                  onCommitRename={(v) => commitTaskListRename(item.data.id, v)}
+                  onDelete={() => handleDeleteTaskList(item.data.id)}
+                />
+              )
+            )}
         </>
       )}
+    </div>
+  );
+}
+
+// ── SidebarNoteItem ───────────────────────────────────────────────────────────
+
+function SidebarNoteItem({
+  note,
+  depth,
+  isActive,
+  onSelect,
+}: {
+  note: Note;
+  depth: number;
+  isActive: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-1.5 py-[3px] rounded-md text-xs transition-colors cursor-pointer",
+        isActive
+          ? "bg-sidebar-accent text-sidebar-foreground"
+          : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+      )}
+      style={{ paddingLeft: `${6 + depth * 14 + 14}px`, paddingRight: "4px" }}
+      onClick={onSelect}
+    >
+      <FileText size={12} className="shrink-0 mr-0.5" />
+      <span className="truncate flex-1">{note.title || "Untitled"}</span>
     </div>
   );
 }

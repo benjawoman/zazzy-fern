@@ -86,9 +86,9 @@ export interface CalendarEvent {
 
 export type ActiveView =
   | { type: "dashboard" }
-  | { type: "folder"; folderId: string }
+  | { type: "folder"; folderId: string; initialNoteId?: string }
   | { type: "note"; noteId: string }
-  | { type: "tasklist"; taskListId: string; title?: string }
+  | { type: "tasklist"; taskListId: string; title?: string; folderId?: string }
   | { type: "calendar" }
   | { type: "overview" }
   | { type: "settings" };

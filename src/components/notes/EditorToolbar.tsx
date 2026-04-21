@@ -1,4 +1,5 @@
 import type { Editor } from "@tiptap/react";
+import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
   Bold,
   Italic,
@@ -9,24 +10,26 @@ import {
   Quote,
   Code,
   Minus,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const FONTS: { label: string; value: string }[] = [
-  { label: "System",        value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
-  { label: "Helvetica",     value: "Helvetica, Arial, sans-serif" },
+  { label: "System",          value: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" },
+  { label: "Helvetica",       value: "Helvetica, Arial, sans-serif" },
   { label: "Times New Roman", value: "'Times New Roman', Times, serif" },
-  { label: "Georgia",       value: "Georgia, 'Times New Roman', serif" },
-  { label: "Comic Sans",    value: "'Comic Sans MS', 'Chalkboard SE', cursive" },
-  { label: "Courier New",   value: "'Courier New', Courier, monospace" },
-  { label: "Trebuchet MS",  value: "'Trebuchet MS', Helvetica, sans-serif" },
+  { label: "Georgia",         value: "Georgia, 'Times New Roman', serif" },
+  { label: "Comic Sans",      value: "'Comic Sans MS', 'Chalkboard SE', cursive" },
+  { label: "Courier New",     value: "'Courier New', Courier, monospace" },
+  { label: "Trebuchet MS",    value: "'Trebuchet MS', Helvetica, sans-serif" },
 ];
 
-const HEADING_OPTIONS = [
-  { label: "Paragraph", value: "paragraph" },
-  { label: "Heading 1",  value: "h1" },
-  { label: "Heading 2",  value: "h2" },
-  { label: "Heading 3",  value: "h3" },
+const HEADING_OPTIONS: { label: string; value: string; size: string; weight: string }[] = [
+  { label: "Paragraph", value: "paragraph", size: "0.8125rem", weight: "400" },
+  { label: "Heading 1", value: "h1",        size: "1.25rem",   weight: "700" },
+  { label: "Heading 2", value: "h2",        size: "1.05rem",   weight: "700" },
+  { label: "Heading 3", value: "h3",        size: "0.9rem",    weight: "600" },
+  { label: "Heading 4", value: "h4",        size: "0.8125rem", weight: "600" },
 ];
 
 interface EditorToolbarProps {
@@ -34,7 +37,8 @@ interface EditorToolbarProps {
 }
 
 export function EditorToolbar({ editor }: EditorToolbarProps) {
-  const currentFont = (editor.getAttributes("textStyle").fontFamily as string | undefined) ?? FONTS[0].value;
+  const currentFont =
+    (editor.getAttributes("textStyle").fontFamily as string | undefined) ?? FONTS[0].value;
 
   const currentHeading = editor.isActive("heading", { level: 1 })
     ? "h1"
@@ -42,13 +46,15 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
     ? "h2"
     : editor.isActive("heading", { level: 3 })
     ? "h3"
+    : editor.isActive("heading", { level: 4 })
+    ? "h4"
     : "paragraph";
 
   const handleHeadingChange = (value: string) => {
     if (value === "paragraph") {
       editor.chain().focus().setParagraph().run();
     } else {
-      const level = parseInt(value[1]) as 1 | 2 | 3;
+      const level = parseInt(value[1]) as 1 | 2 | 3 | 4;
       editor.chain().focus().toggleHeading({ level }).run();
     }
   };
@@ -64,23 +70,12 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
   return (
     <div className="flex items-center gap-0.5 px-4 py-1.5 border-b border-border shrink-0 flex-wrap">
       {/* Font family */}
-      <ToolbarSelect
-        value={currentFont}
-        onChange={handleFontChange}
-        options={FONTS.map((f) => ({ label: f.label, value: f.value }))}
-        style={{ fontFamily: currentFont }}
-        width="w-32"
-      />
+      <FontPicker currentFont={currentFont} onChange={handleFontChange} />
 
       <Divider />
 
       {/* Heading / paragraph */}
-      <ToolbarSelect
-        value={currentHeading}
-        onChange={handleHeadingChange}
-        options={HEADING_OPTIONS}
-        width="w-28"
-      />
+      <HeadingPicker currentHeading={currentHeading} onChange={handleHeadingChange} />
 
       <Divider />
 
@@ -171,7 +166,101 @@ export function EditorToolbar({ editor }: EditorToolbarProps) {
   );
 }
 
-// ── Primitives ───────────────────────────────────────────────────────────────
+// ── FontPicker ────────────────────────────────────────────────────────────────
+
+function FontPicker({
+  currentFont,
+  onChange,
+}: {
+  currentFont: string;
+  onChange: (v: string) => void;
+}) {
+  const currentLabel = FONTS.find((f) => f.value === currentFont)?.label ?? "System";
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button
+          className="flex items-center gap-1 h-6 w-32 px-1.5 border border-border/50 rounded text-[11px] text-muted-foreground hover:border-border hover:text-foreground transition-colors cursor-pointer outline-none focus:ring-1 focus:ring-ring"
+          style={{ fontFamily: currentFont }}
+        >
+          <span className="flex-1 text-left truncate">{currentLabel}</span>
+          <ChevronDown size={9} className="shrink-0 opacity-50" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          sideOffset={4}
+          className="z-50 min-w-44 rounded-md border border-border bg-popover py-1 shadow-2xl"
+        >
+          {FONTS.map((font) => (
+            <DropdownMenu.Item
+              key={font.value}
+              onSelect={() => onChange(font.value)}
+              style={{ fontFamily: font.value }}
+              className={cn(
+                "flex items-center px-3 py-1.5 text-sm cursor-pointer outline-none select-none hover:bg-accent focus:bg-accent",
+                font.value === currentFont
+                  ? "text-primary"
+                  : "text-popover-foreground"
+              )}
+            >
+              {font.label}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+// ── HeadingPicker ─────────────────────────────────────────────────────────────
+
+function HeadingPicker({
+  currentHeading,
+  onChange,
+}: {
+  currentHeading: string;
+  onChange: (v: string) => void;
+}) {
+  const currentOption =
+    HEADING_OPTIONS.find((h) => h.value === currentHeading) ?? HEADING_OPTIONS[0];
+
+  return (
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger asChild>
+        <button className="flex items-center gap-1 h-6 w-28 px-1.5 border border-border/50 rounded text-[11px] text-muted-foreground hover:border-border hover:text-foreground transition-colors cursor-pointer outline-none focus:ring-1 focus:ring-ring">
+          <span className="flex-1 text-left truncate">{currentOption.label}</span>
+          <ChevronDown size={9} className="shrink-0 opacity-50" />
+        </button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          sideOffset={4}
+          className="z-50 min-w-44 rounded-md border border-border bg-popover py-1 shadow-2xl"
+        >
+          {HEADING_OPTIONS.map((opt) => (
+            <DropdownMenu.Item
+              key={opt.value}
+              onSelect={() => onChange(opt.value)}
+              style={{ fontSize: opt.size, fontWeight: opt.weight }}
+              className={cn(
+                "flex items-center px-3 py-2 cursor-pointer outline-none select-none hover:bg-accent focus:bg-accent",
+                opt.value === currentHeading
+                  ? "text-primary"
+                  : "text-popover-foreground"
+              )}
+            >
+              {opt.label}
+            </DropdownMenu.Item>
+          ))}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
+// ── Primitives ────────────────────────────────────────────────────────────────
 
 function ToolbarButton({
   active,
@@ -192,7 +281,7 @@ function ToolbarButton({
       }}
       title={title}
       className={cn(
-        "flex items-center justify-center w-6 h-6 rounded transition-colors",
+        "flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer",
         active
           ? "bg-accent text-foreground"
           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
@@ -200,38 +289,6 @@ function ToolbarButton({
     >
       {children}
     </button>
-  );
-}
-
-function ToolbarSelect({
-  value,
-  onChange,
-  options,
-  style,
-  width = "w-24",
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  options: { label: string; value: string }[];
-  style?: React.CSSProperties;
-  width?: string;
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      style={style}
-      className={cn(
-        width,
-        "h-6 bg-transparent border border-border/50 rounded text-[11px] text-muted-foreground hover:border-border hover:text-foreground transition-colors px-1.5 cursor-pointer outline-none focus:ring-1 focus:ring-ring"
-      )}
-    >
-      {options.map((o) => (
-        <option key={o.value} value={o.value}>
-          {o.label}
-        </option>
-      ))}
-    </select>
   );
 }
 

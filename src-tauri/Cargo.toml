@@ -1,6 +1,6 @@
 [package]
 name = "zazzy-fern"
-version = "0.1.4"
+version = "0.1.6"
 description = "Zazzy Fern — personal productivity app"
 authors = ["you"]
 edition = "2021"

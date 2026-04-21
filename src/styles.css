@@ -32,6 +32,12 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  /* +1px across all named text sizes */
+  --text-xs: 0.8125rem;
+  --text-sm: 0.9375rem;
+  --text-base: 1.0625rem;
+  --text-lg: 1.1875rem;
+  --text-xl: 1.3125rem;
 }
 
 /* ── Light mode (fallback, rarely used) ─────────────────────────────────── */
@@ -66,36 +72,36 @@
   --sidebar-ring: oklch(0.55 0.15 150);
 }
 
-/* ── Dark mode — near-black with fern green accent ───────────────────────── */
+/* ── Dark mode — dark gray with fern green accent ────────────────────────── */
 .dark {
-  --background: oklch(0.06 0 0);
+  --background: oklch(0.15 0.003 285);
   --foreground: oklch(0.93 0 0);
-  --card: oklch(0.10 0.002 285);
+  --card: oklch(0.19 0.003 285);
   --card-foreground: oklch(0.93 0 0);
-  --popover: oklch(0.10 0.002 285);
+  --popover: oklch(0.19 0.003 285);
   --popover-foreground: oklch(0.93 0 0);
   --primary: oklch(0.70 0.15 150);
-  --primary-foreground: oklch(0.06 0 0);
-  --secondary: oklch(0.14 0.003 285);
+  --primary-foreground: oklch(0.08 0 0);
+  --secondary: oklch(0.22 0.003 285);
   --secondary-foreground: oklch(0.93 0 0);
-  --muted: oklch(0.14 0.003 285);
-  --muted-foreground: oklch(0.50 0.01 285);
-  --accent: oklch(0.14 0.003 285);
+  --muted: oklch(0.22 0.003 285);
+  --muted-foreground: oklch(0.55 0.01 285);
+  --accent: oklch(0.22 0.003 285);
   --accent-foreground: oklch(0.93 0 0);
   --destructive: oklch(0.55 0.22 25);
   --destructive-foreground: oklch(0.93 0 0);
-  --border: oklch(1 0 0 / 7%);
-  --input: oklch(1 0 0 / 9%);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
   --ring: oklch(0.70 0.15 150);
   --radius: 0.5rem;
 
-  --sidebar: oklch(0.075 0.001 285);
+  --sidebar: oklch(0.12 0.002 285);
   --sidebar-foreground: oklch(0.93 0 0);
   --sidebar-primary: oklch(0.70 0.15 150);
-  --sidebar-primary-foreground: oklch(0.06 0 0);
-  --sidebar-accent: oklch(0.13 0.003 285);
+  --sidebar-primary-foreground: oklch(0.08 0 0);
+  --sidebar-accent: oklch(0.19 0.003 285);
   --sidebar-accent-foreground: oklch(0.93 0 0);
-  --sidebar-border: oklch(1 0 0 / 5%);
+  --sidebar-border: oklch(1 0 0 / 6%);
   --sidebar-ring: oklch(0.70 0.15 150);
 }
 
@@ -131,6 +137,7 @@ input, textarea, [contenteditable], .selectable {
 .note-editor h1 { font-size: 1.5em; font-weight: 700; margin: 1.2em 0 0.4em; line-height: 1.3; }
 .note-editor h2 { font-size: 1.25em; font-weight: 600; margin: 1.1em 0 0.4em; line-height: 1.35; }
 .note-editor h3 { font-size: 1.1em; font-weight: 600; margin: 1em 0 0.3em; line-height: 1.4; }
+.note-editor h4 { font-size: 1em; font-weight: 600; margin: 0.9em 0 0.25em; line-height: 1.4; }
 
 .note-editor ul, .note-editor ol { padding-left: 1.5em; margin: 0.4em 0 0.6em; }
 .note-editor li { margin: 0.15em 0; }
